@@ -21,10 +21,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 2.8)
 file(GLOB_RECURSE SOURCE_FILES *.c *.h *.hpp)
 add_library(Hooker STATIC ${SOURCE_FILES})
-target_include_directories(Hooker PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (HOOKER_WITH_TESTS)
     enable_testing()
