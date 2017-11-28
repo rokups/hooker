@@ -24,11 +24,6 @@
 
 #pragma once
 
-
-#include <stdint.h>
-#include <stddef.h>
-
-
 #define HOOKER_ERROR            (0)
 #define HOOKER_SUCCESS          ((void*)1)
 #define HOOKER_MEM_R            (1)
@@ -48,6 +43,13 @@
 #define HOOKER_HOOK_FAT         (4)
 
 #if __cplusplus
+#    include <cstdint>
+#    include <cstddef>
+#else
+#    include <stdint.h>
+#    include <stddef.h>
+#endif
+
 extern "C" {
 #endif
 
