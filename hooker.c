@@ -1235,9 +1235,9 @@ void* hooker_find_pattern(void* start, size_t size, uint8_t* pattern, size_t pat
     if (start == 0 || pattern == 0 || pattern_len == 0)
         return 0;
 
-    char* p = (char*)start;
-    char* end = (char*)~0;
-    if (size == 0)
+    uint8_t* p = (char*)start;
+    uint8_t* end = (char*)~0;
+    if (size != 0)
         end = &p[size - pattern_len];
 
     while (p < end)
