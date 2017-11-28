@@ -67,6 +67,10 @@ extern "C" {
 #endif
 
 /// Change protection of memory range.
+/// \param p memory address.
+/// \param size of memory at address p.
+/// \param protection a combination of HOOKER_MEM_* flags.
+/// \param original_protection on supported platforms will be set to current memory protection mode. May be null. If not null - always initialize to a best-guess current protection flags value, because on some platforms (like linux) this variable will not be set.
 void* hooker_mem_protect(void* p, size_t size, size_t protection, size_t* original_protection);
 /// Get mnemonic size of current platform.
 size_t hooker_get_mnemonic_size(void* address, size_t min_size);
@@ -1065,7 +1069,6 @@ disasm_done:
 #include <assert.h>
 #if _WIN32
 #   undef NOMINMAX
-#   include <ntdef.h>
 #   include <windows.h>
 #   define MIN min
 #   define MAX max
@@ -1131,32 +1134,32 @@ void* hooker_mem_protect(void* p, size_t size, size_t protection, size_t* origin
     DWORD old = 0;
     DWORD flags = PAGE_NOACCESS;
     if (protection & HOOKER_MEM_PLATFORM)
-        flags = (DWORD)protection;
+        flags = (DWORD)(protection & ~HOOKER_MEM_PLATFORM);
     else
     {
         if (protection & HOOKER_MEM_R && protection & HOOKER_MEM_W && protection & HOOKER_MEM_X)
-            flags |= PAGE_EXECUTE_READWRITE;
+            flags = PAGE_EXECUTE_READWRITE;
         else if (protection & HOOKER_MEM_R && protection & HOOKER_MEM_W)
-            flags |= PAGE_READWRITE;
+            flags = PAGE_READWRITE;
         else if (protection & HOOKER_MEM_R && protection & HOOKER_MEM_X)
-            flags |= PAGE_EXECUTE_READ;
+            flags = PAGE_EXECUTE_READ;
         else if (protection & HOOKER_MEM_R)
-            flags |= PAGE_READONLY;
-        if (protection & HOOKER_MEM_X)
-            flags |= PAGE_EXECUTE;
+            flags = PAGE_READONLY;
+        else if (protection & HOOKER_MEM_X)
+            flags = PAGE_EXECUTE;
     }
-    if (VirtualProtect(p, size, (DWORD)protection, &old))
+    if (VirtualProtect(p, size, flags, &old))
     {
         if (original_protection)
-            *original_protection = (size_t)old & HOOKER_MEM_PLATFORM;
+            *original_protection = (size_t)old | HOOKER_MEM_PLATFORM;
         return HOOKER_SUCCESS;
     }
 #elif __linux__
-    size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
-    void* page = (void*) ((size_t)p & ~(page_size - 1));
+    size_t page_size = (size_t)sysconf(_SC_PAGE_SIZE);
+    void* page = (void*)((size_t)p & ~(page_size - 1));
     int flags = PROT_NONE;
     if (protection & HOOKER_MEM_PLATFORM)
-        flags = (int) protection;
+        flags = (int)(protection & ~HOOKER_MEM_PLATFORM);
     else
     {
         if (protection & HOOKER_MEM_R)
@@ -1169,9 +1172,7 @@ void* hooker_mem_protect(void* p, size_t size, size_t protection, size_t* origin
     if (mprotect(page, ((size / page_size) + 1) * page_size, flags) == 0)
     {
         // Is there an easy way to get original protection flags without parsing sysfs?
-        if (original_protection)
-            *original_protection = HOOKER_MEM_RX;
-
+        // old_protect should be set by caller for now.
         return HOOKER_SUCCESS;
     }
 #endif
@@ -1199,7 +1200,7 @@ void* hooker_hotpatch(void* location, void* new_proc)
     if (*(uint16_t*)location != 0xFF8B)                                          // Verify if location is hot-patchable.
         return (void*)HOOKER_ERROR;
     hooker_hook((uint8_t*)location - 5, new_proc, HOOKER_HOOK_JMP, 0);
-    size_t original_protection;
+    size_t original_protection = HOOKER_MEM_RX;
     hooker_mem_protect(location, 2, HOOKER_MEM_RWX, &original_protection);
     *(uint16_t*)location = 0xF9EB;                                              // jump back to hotpatch
     hooker_mem_protect(location, 2, original_protection, 0);
@@ -1211,7 +1212,7 @@ void* hooker_unhotpatch(void* location)
 {
     if (*(uint16_t*)location != 0xF9EB)                                         // Verify that location was hotpatched.
         return (size_t)HOOKER_ERROR;
-    size_t original_protection;
+    size_t original_protection = HOOKER_MEM_RX;
     hooker_mem_protect(location, 2, HOOKER_MEM_RWX, &original_protection);
     *(uint16_t*)location = 0xFF8B;                                              // mov edi, edi = nop
     hooker_mem_protect(location, 2, original_protection, 0);
@@ -1230,7 +1231,7 @@ void hooker_nop_tail(void* address, size_t len, size_t nops)
     if (nops > 0)
     {
         uint8_t* location_t = (uint8_t*)address;
-        size_t original_protection;
+        size_t original_protection = HOOKER_MEM_RX;
         hooker_mem_protect(location_t + len, nops, HOOKER_MEM_RWX, &original_protection);
         memset(location_t + len, 0x90, nops);
         hooker_mem_protect(location_t + len, nops, original_protection, 0);
@@ -1256,7 +1257,7 @@ void* hooker_hook(void* address_, void* new_proc, size_t flags, size_t nops)
 
         // Fat call/jump to 64 bit address
         const uint8_t jmp_rsp_0[] = {0xFF, opcode, 0x00, 0x00, 0x00, 0x00 };
-        size_t original_protection;
+        size_t original_protection = HOOKER_MEM_RX;
         hooker_mem_protect(address, 14, HOOKER_MEM_RWX, &original_protection);
         memcpy(address, jmp_rsp_0, sizeof(jmp_rsp_0));
         *(size_t*)(address + sizeof(jmp_rsp_0)) = (uint64_t)new_proc;
@@ -1264,8 +1265,8 @@ void* hooker_hook(void* address_, void* new_proc, size_t flags, size_t nops)
         hooker_flush_instruction_cache(address, 14);
         return HOOKER_SUCCESS;
     }
-#endif
     else
+#endif
     {
         uint8_t opcode = 0;
         if (flags & HOOKER_HOOK_CALL)
@@ -1282,7 +1283,7 @@ void* hooker_hook(void* address_, void* new_proc, size_t flags, size_t nops)
 #endif
             hooker_nop_tail(address, 5, nops);
 
-            size_t original_protection;
+            size_t original_protection = HOOKER_MEM_RX;
             hooker_mem_protect(address, 5, HOOKER_MEM_RWX, &original_protection);
             uint8_t* location_t = address;
             *location_t = opcode;
@@ -1304,7 +1305,7 @@ void* hooker_redirect(void* address_, void* new_proc)
     size_t hook_type = HOOKER_HOOK_FAT | HOOKER_HOOK_JMP;
 #else
     uint32_t jmp_len = 5;
-        size_t hook_type = HOOKER_HOOK_JMP;
+    size_t hook_type = HOOKER_HOOK_JMP;
 #endif
     size_t save_bytes = hooker_get_mnemonic_size(address, jmp_len);
 
@@ -1318,11 +1319,6 @@ void* hooker_redirect(void* address_, void* new_proc)
     hooker_hook(bridge + save_bytes, address + save_bytes, hook_type, (size_t)-1);
     // Write jump to the new proc
     hooker_hook(address, new_proc, hook_type, 0);
-    // Nop bytes after hook
-    hooker_nop_tail(address, jmp_len, 0);
-    // Flush instruction caches. Not doing so causes crashes to unlucky.
-    hooker_flush_instruction_cache(address, jmp_len);
-    hooker_flush_instruction_cache(bridge, save_bytes + jmp_len);
     // Bridge is call to original proc
     return bridge;
 }
@@ -1330,11 +1326,11 @@ void* hooker_redirect(void* address_, void* new_proc)
 void hooker_unhook(void* address, void* original)
 {
     // Possible call with HOOKER_SUCCESS or HOOKER_ERROR parameter.
-    if (original < (void*) 2)
+    if (original < (void*)2)
         return;
 
     uint8_t restore_len = *((uint8_t*)original - 1);
-    size_t original_protection;
+    size_t original_protection = HOOKER_MEM_RX;
     hooker_mem_protect(address, restore_len, HOOKER_MEM_RWX, &original_protection);
     memcpy(address, original, restore_len);
     hooker_mem_protect(address, restore_len, original_protection, 0);
