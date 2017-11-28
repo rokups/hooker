@@ -50,6 +50,19 @@
 #    include <stddef.h>
 #endif
 
+#if __cplusplus
+/// Force-cast between incompatible types.
+template<typename T, typename T2>
+inline T hooker_force_cast(T2 input)
+{
+    union
+    {
+        T2 input;
+        T output;
+    } u = { input };
+    return u.output;
+};
+
 extern "C" {
 #endif
 
