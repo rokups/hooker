@@ -95,6 +95,19 @@ void* hooker_redirect(void* address, void* new_proc);
 /// \param original result of hooker_hook() call.
 void hooker_unhook(void* address, void* original);
 
+/// Return address in object's vmt which is pointing to specified method.
+/// \param object is a pointer to a c++ object.
+/// \param method is a pointer to a c++ object method.
+size_t* hooker_get_vmt_address(void* object, void* method);
+
+/// Find a first occourence of memory pattern.
+/// \param start a pointer to beginning of memory range.
+/// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash.
+/// \param pattern a array of bytes to search for.
+/// \param pattern_len a length of pattern array.
+/// \param a wildcard byte in the pattern array.
+void* hooker_find_pattern(void* start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
+
 #ifdef HOOKER_IMPLEMENTATION
 
 /*
@@ -1329,6 +1342,40 @@ void hooker_unhook(void* address, void* original)
     hooker_flush_instruction_cache(address, restore_len);
 }
 
+size_t* hooker_get_vmt_address(void* object, void* method)
+{
+    size_t* vmt = *(size_t**)object;
+    while (*vmt != (size_t)method)
+        vmt++;
+    return vmt;
+}
+
+void* hooker_find_pattern(void* start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
+{
+    if (start == 0 || pattern == 0 || pattern_len == 0)
+        return 0;
+
+    char* p = (char*)start;
+    char* end = (char*)~0;
+    if (size == 0)
+        end = &p[size - pattern_len];
+
+    while (p < end)
+    {
+    pattern_search:
+        for (size_t i = 0; i < pattern_len; i++)
+        {
+            if (p[i] != pattern[i] && pattern[i] != wildcard)
+            {
+                p++;
+                goto pattern_search;
+            }
+        }
+        return p;
+    }
+
+    return 0;
+}
 #endif  // HOOKER_IMPLEMENTATION
 
 #if __cplusplus
