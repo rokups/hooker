@@ -51,20 +51,16 @@
 #endif
 
 #if __cplusplus
-/// Force-cast between incompatible types.
-template<typename T, typename T2>
-inline T hooker_force_cast(T2 input)
-{
-    union
-    {
-        T2 input;
-        T output;
-    } u = { input };
-    return u.output;
-};
-
 extern "C" {
 #endif
+
+/// Call any address with arbitrary amount of arguments. Returns value of specified type.
+/// \param returnType of return value.
+/// \param address of a call.
+#define hooker_call(returnType, address, ...) (returnType(*)(...))(address)(__VA_ARGS__);
+/// Call any address with arbitrary amount of arguments. Does not return anything.
+/// \param address of a call.
+#define hooker_callv(address, ...)            (void(*)(...))(address)(__VA_ARGS__);
 
 /// Change protection of memory range.
 /// \param p memory address.
@@ -84,7 +80,7 @@ void* hooker_unhotpatch(void* location);
 /// \param address a pointer where hook should be written
 /// \param new_proc a pointer where hook should point to.
 /// \param flags any of HOOKER_HOOK_* flags. They may not be combined.
-/// \param number of bytes to nop after hook instruction.
+/// \param nops of bytes to nop after hook instruction. Specify -1 to autocalculate.
 /// \returns null on failure or non-null on success.
 void* hooker_hook(void* address, void* new_proc, size_t flags, size_t nops);
 
@@ -92,7 +88,7 @@ void* hooker_hook(void* address, void* new_proc, size_t flags, size_t nops);
 /// \param address a start of original call. Warning: It should not contain any relatively-addressed instructions like calls or jumps.
 /// \param new_proc a proc that will be called instead of original one.
 /// \returns pointer, calling which will invoke original proc. It is user's responsibility to call original code when necessary.
-void* hooker_redirect(void* address, void* new_proc);
+void* hooker_redirect(void* address, void* new_proc, size_t flags);
 
 /// Unhook a hook created by hooker_hook(.., .., HOOKER_HOOK_REDIRECT, ..).
 /// \param address where hook was written to.
@@ -111,6 +107,11 @@ size_t* hooker_get_vmt_address(void* object, void* method);
 /// \param pattern_len a length of pattern array.
 /// \param a wildcard byte in the pattern array.
 void* hooker_find_pattern(void* start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
+
+/// Fill memory with nops (0x90 opcode).
+/// \param start of the memory address.
+/// \param size of the memory that will be filled.
+void hooker_nop(void* start, size_t size);
 
 // Define following macro in a single translation unit in order to use library without building it.
 #ifdef HOOKER_IMPLEMENTATION
