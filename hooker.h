@@ -113,6 +113,12 @@ void* hooker_find_pattern(void* start, size_t size, uint8_t* pattern, size_t pat
 /// \param size of the memory that will be filled.
 void hooker_nop(void* start, size_t size);
 
+/// Write bytes to specified memory address.
+/// \param start of the memory address.
+/// \param data to be written.
+/// \param size of data.
+void hooker_write(void* start, void* data, size_t size);
+
 // Define following macro in a single translation unit in order to use library without building it.
 #ifdef HOOKER_IMPLEMENTATION
 #    include "hooker.c"

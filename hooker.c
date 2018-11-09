@@ -1270,3 +1270,15 @@ void hooker_nop(void* start, size_t size)
     hooker_mem_protect(start, size, original, 0);
     hooker_flush_instruction_cache(start, size);
 }
+
+void hooker_write(void* start, void* data, size_t size)
+{
+    if (start == 0 || size == 0)
+        return;
+
+    size_t original = HOOKER_MEM_RX;
+    hooker_mem_protect(start, size, HOOKER_MEM_RWX, &original);
+    memcpy(start, data, size);
+    hooker_mem_protect(start, size, original, 0);
+    hooker_flush_instruction_cache(start, size);
+}
