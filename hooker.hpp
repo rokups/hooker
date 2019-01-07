@@ -29,42 +29,31 @@
 
 namespace hooker
 {
-    /// Force-cast between incompatible types.
-    template<typename T0, typename T1>
-    inline T0 force_cast(T1 input)
-    {
-        union
-        {
-            T1 input;
-            T0 output;
-        } u = { input };
-        return u.output;
-    };
-
-#if _MSC_VER
-#pragma warning(push)  
-#pragma warning(disable: 4715)
-#endif
 #if __cplusplus >= 201402L
 #   define CPP14(x) x
     /// Universal call function that takes address as a first argument and any amount of arguments. Address will be called with these arguments. Return type is specified as first template argument.
     /// \param address of function to call.
     /// \param ... any amount of arguments with any types.
     /// \returns value of type specified as first template argument, or none if no type is specified.
-    template<typename T0 = void, typename T1 = auto, typename... Args>
-    T0 call(T1 address, Args... arguments)
+    template<typename Result, typename Addr, typename... Args, typename std::enable_if<std::is_void<Result>::value>::type* = nullptr>
+    Result call(Addr address, Args... arguments)
     {
-        typedef T0(*UniversalCall)(...);
-        if (std::is_void<T0>())
-            UniversalCall(address)(arguments...);
-        else
-            return UniversalCall(address)(arguments...);
+        typedef Result(*UniversalCall)(...);
+        reinterpret_cast<UniversalCall>(address)(arguments...);
+    }
+
+    /// Universal call function that takes address as a first argument and any amount of arguments. Address will be called with these arguments. Return type is specified as first template argument.
+    /// \param address of function to call.
+    /// \param ... any amount of arguments with any types.
+    /// \returns value of type specified as first template argument, or none if no type is specified.
+    template<typename Result, typename Addr, typename... Args, typename std::enable_if<!std::is_void<Result>::value>::type* = nullptr>
+    Result call(Addr address, Args... arguments)
+    {
+        typedef Result(*UniversalCall)(...);
+        return UniversalCall(address)(arguments...);
     }
 #else
 #   define CPP14(x)
-#endif
-#if _MSC_VER
-#pragma warning(pop)
 #endif
 
     /// Change protection of memory range.
@@ -72,18 +61,18 @@ namespace hooker
     /// \param size of memory at address p.
     /// \param protection a combination of HOOKER_MEM_* flags.
     /// \param original_protection on supported platforms will be set to current memory protection mode. May be null. If not null - always initialize to a best-guess current protection flags value, because on some platforms (like linux) this variable will not be set.
-    template<typename T0 CPP14( CPP14(=void*)), typename T1 CPP14(=auto)>
-    T0 mem_protect(T1 p, size_t size, size_t protection, size_t* original_protection=nullptr) { return force_cast<T0>(hooker_mem_protect(force_cast<void*>(p), size, protection, original_protection));  }
+    template<typename Type CPP14( CPP14(=void*)), typename Addr CPP14(=auto)>
+    bool mem_protect(Addr p, size_t size, size_t protection, size_t* original_protection=nullptr) { return hooker_mem_protect(reinterpret_cast<void*>(p), size, protection, original_protection) == HOOKER_SUCCESS;  }
     /// Get mnemonic size of current platform.
-    template<typename T>
-    size_t get_mnemonic_size(T address, size_t min_size) { return hooker_get_mnemonic_size(force_cast<void*>(address), min_size); }
+    template<typename Addr>
+    size_t get_mnemonic_size(Addr address, size_t min_size) { return hooker_get_mnemonic_size(reinterpret_cast<void*>(address), min_size); }
 
     /// Hotpatch a call.
-    template<typename T0 CPP14(=void*), typename T1 CPP14(=auto), typename T2 CPP14(=auto)>
-    T0 hotpatch(T1 location, T2 new_proc) { return force_cast<T0>(hooker_hotpatch(force_cast<void*>(location), force_cast<void*>(new_proc))); }
+    template<typename OriginalProc CPP14(=void*), typename Addr CPP14(=auto), typename ProcAddr CPP14(=auto)>
+    OriginalProc hotpatch(Addr location, ProcAddr new_proc) { return reinterpret_cast<OriginalProc>(hooker_hotpatch(reinterpret_cast<void*>(location), reinterpret_cast<void*>(new_proc))); }
     /// Unhotpatch a call.
-    template<typename T0 CPP14(=void*), typename T1 CPP14(=auto)>
-    T0 unhotpatch(T1 location) { return force_cast<T0>(hooker_unhotpatch(force_cast<void*>(location))); }
+    template<typename Type CPP14(=void*), typename Addr CPP14(=auto)>
+    bool unhotpatch(Addr location) { return hooker_unhotpatch(reinterpret_cast<void*>(location)) == HOOKER_SUCCESS; }
 
     /// Writes a jump or call hook from `address` to `new_proc`.
     /// \param address a pointer where hook should be written
@@ -91,27 +80,27 @@ namespace hooker
     /// \param flags any of HOOKER_HOOK_* flags. They may not be combined.
     /// \param nops of bytes to nop after hook instruction. Specify -1 to autocalculate.
     /// \returns null on failure or non-null on success.
-    template<typename T1, typename T2>
-    bool hook(T1 address, T2 new_proc, size_t flags, size_t nops=-1) { return hooker_hook(force_cast<void*>(address), force_cast<void*>(new_proc), flags, nops) != nullptr; }
+    template<typename Addr, typename ProcAddr>
+    bool hook(Addr address, ProcAddr new_proc, size_t flags, size_t nops=-1) { return hooker_hook(reinterpret_cast<void*>(address), reinterpret_cast<void*>(new_proc), flags, nops) == HOOKER_SUCCESS; }
 
     /// Redirect call to custom proc.
     /// \param address a start of original call. Warning: It should not contain any relatively-addressed instructions like calls or jumps.
     /// \param new_proc a proc that will be called instead of original one.
     /// \returns pointer, calling which will invoke original proc. It is user's responsibility to call original code when necessary.
-    template<typename T0 CPP14(=void*), typename T1 CPP14(=auto), typename T2 CPP14(=auto)>
-    T0 redirect(T1 address, T2 new_proc, size_t flags) { return force_cast<T0>(hooker_redirect(force_cast<void*>(address), force_cast<void*>(new_proc), flags)); }
+    template<typename OriginalProc CPP14(=void*), typename Addr CPP14(=auto), typename ProcAddr CPP14(=auto)>
+    OriginalProc redirect(Addr address, ProcAddr new_proc, size_t flags=0) { return reinterpret_cast<OriginalProc>(hooker_redirect(reinterpret_cast<void*>(address), reinterpret_cast<void*>(new_proc), flags)); }
 
     /// Unhook a hook created by hooker::hook(.., .., HOOKER_HOOK_REDIRECT, ..).
     /// \param address where hook was written to.
-    /// \param original result of hooker::hook() call.
-    template<typename T1, typename T2>
-    void unhook(T1 address, T2 original) { hooker_unhook(force_cast<void*>(address), force_cast<void*>(original)); }
+    /// \param original result of hooker::redirect() call.
+    template<typename Addr, typename OriginalProc>
+    void unhook(Addr address, OriginalProc original) { hooker_unhook(reinterpret_cast<void*>(address), reinterpret_cast<void*>(original)); }
 
     /// Return address in object's vmt which is pointing to specified method.
     /// \param object is a pointer to a c++ object.
     /// \param method is a pointer to a c++ object method.
-    template<typename T1, typename T2>
-    size_t* get_vmt_address(T1 object, T2 method) { return force_cast<T0>(hooker_get_vmt_address(force_cast<void*>(object), force_cast<void*>(method))); }
+    template<typename Addr, typename ProcAddr>
+    size_t* get_vmt_address(Addr object, ProcAddr method) { return (size_t*)hooker_get_vmt_address(reinterpret_cast<void*>(object), reinterpret_cast<void*>(method)); }
 
     /// Find a first occourence of memory pattern.
     /// \param start a pointer to beginning of memory range.
@@ -119,12 +108,32 @@ namespace hooker
     /// \param pattern a array of bytes to search for.
     /// \param pattern_len a length of pattern array.
     /// \param a wildcard byte in the pattern array.
-    template<typename T0 CPP14(=uint8_t*), typename T1 CPP14(=auto)>
-    T0 find_pattern(T1 start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard) { return force_cast<T0>(hooker_find_pattern(force_cast<void*>(start), size, pattern, pattern_len, wildcard)); }
+    template<typename Type CPP14(=uint8_t*), typename Addr CPP14(=auto)>
+    Type find_pattern(Addr start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard) { return (Type)hooker_find_pattern(reinterpret_cast<void*>(start), size, pattern, pattern_len, wildcard); }
 
     /// Fill memory with nops (0x90 opcode).
     /// \param start of the memory address.
     /// \param size of the memory that will be filled.
-    template<typename T1>
-    void nop(T1 start, size_t size) { hooker_nop(force_cast<void*>(start), size); }
+    template<typename Addr>
+    void nop(Addr start, size_t size) { hooker_nop(reinterpret_cast<void*>(start), size); }
+
+    /// Write a value to specified memory address.
+    /// \param start of the memory address.
+    /// \param value to be written.
+    template<typename Type, typename Addr>
+    void write(Addr address, const Type value) { hooker_write(reinterpret_cast<void*>(address), (void*)&value, sizeof(value)); }
+
+    /// Write an array to specified memory address.
+    /// \param start of the memory address.
+    /// \param value to be written.
+    /// \param count of elements in the array.
+    template<typename Type, typename Addr>
+    void write(Addr address, const Type* value, size_t count) { hooker_write(reinterpret_cast<void*>(address), (void*)value, sizeof(Type) * count); }
+
+    /// Write bytes to specified memory address.
+    /// \param start of the memory address.
+    /// \param data to be written.
+    /// \param size of data.
+    template<typename Addr>
+    void write(Addr address, const void* data, size_t size) { hooker_write(reinterpret_cast<void*>(address), data, size); }
 };
