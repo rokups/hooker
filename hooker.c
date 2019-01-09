@@ -1232,24 +1232,89 @@ size_t* hooker_get_vmt_address(void* object, void* method)
     return vmt;
 }
 
-void* hooker_find_pattern(void* start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
+void* hooker_find_pattern(void* start, int size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
 {
     if (start == 0 || pattern == 0 || pattern_len == 0)
         return 0;
 
     uint8_t* p = (uint8_t*)start;
     uint8_t* end = (uint8_t*)~0;
-    if (size != 0)
+    int step = 1;
+    if (size > 0)
         end = &p[size - pattern_len];
+    else if (size < 0)
+    {
+        step = -1;
+        p -= pattern_len;
+        end = &p[size];
+    }
 
-    while (p < end)
+    while (step > 0 ? p < end : p >= end)
     {
     pattern_search:
         for (size_t i = 0; i < pattern_len; i++)
         {
             if (p[i] != pattern[i] && pattern[i] != wildcard)
             {
-                p++;
+                p += step;
+                goto pattern_search;
+            }
+        }
+        return p;
+    }
+
+    return 0;
+}
+
+void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size_t pattern_len, const uint8_t* wildcard)
+{
+    if (start == 0 || pattern == 0 || pattern_len == 0)
+        return 0;
+
+    uint8_t* p = (uint8_t*)start;
+    uint8_t* end = (uint8_t*)~0;
+    int step = 1;
+    if (size > 0)
+        end = &p[size - pattern_len];
+    else if (size < 0)
+    {
+        step = -1;
+        p -= pattern_len;
+        end = &p[size];
+    }
+
+    while (step > 0 ? p < end : p >= end)
+    {
+    pattern_search:
+        for (size_t i = 0; i < pattern_len; i++)
+        {
+            uint8_t byte = p[i];
+            uint8_t value = pattern[i];
+            switch (wildcard[i])
+            {
+            case 1:
+                // First half of byte to ignore, keep only second half.
+                byte &= 0xF0;
+                value &= 0xF0;
+                break;
+            case 2:
+                // Second half of byte to ignore, keep only first half.
+                byte &= 0x0F;
+                value &= 0x0F;
+                break;
+            case 3:
+                // Ignore entire byte.
+                byte = 0;
+                value = 0;
+                break;
+            default:
+                // Not a wildcard.
+                break;
+            }
+
+            if (byte != value)
+            {
+                p += step;
                 goto pattern_search;
             }
         }

@@ -25,10 +25,21 @@
 #pragma once
 
 #include <type_traits>
+#include <stdexcept>
 #include "hooker.h"
 
 namespace hooker
 {
+    /// Pattern for find_pattern() function.
+    template <size_t N>
+    struct pattern
+    {
+        /// Bytes to find. Value of wildcard byte or byte half can be anything.
+        uint8_t pattern[N];
+        /// Wildcard pattern. Byte value may be one of: 0? = 1, ?0 = 2, ?? = 3.
+        uint8_t wildcard[N];
+    };
+
 #if __cplusplus >= 201402L
 #   define CPP14(x) x
     /// Universal call function that takes address as a first argument and any amount of arguments. Address will be called with these arguments. Return type is specified as first template argument.
@@ -52,6 +63,62 @@ namespace hooker
         typedef Result(*UniversalCall)(...);
         return UniversalCall(address)(arguments...);
     }
+
+    namespace detail
+    {
+        // Convert hex character to a number.
+        constexpr uint8_t char_to_byte(char c)
+        {
+            if (c >= '0' && c <= '9')
+                return c - '0';
+            else if (c >= 'a' && c <= 'f')
+                return 0x0A + c - 'a';
+            else if (c >= 'A' && c <= 'F')
+                return 0x0A + c - 'A';
+            else if (c == '?')
+                return 0;
+            else
+                throw std::runtime_error("Not a hex character.");
+        }
+
+        // Convert text hex byte at `idx` to binary.
+        template <size_t N>
+        constexpr uint8_t get_pattern_byte(const char(&s)[N], size_t idx)
+        {
+            if (s[idx * 3 + 2] != ' ' && s[idx * 3 + 2] != '\0')
+                throw std::runtime_error("Improperly formatted pattern.");
+            else
+                return (char_to_byte(s[idx * 3]) << 4) | char_to_byte(s[idx * 3 + 1]);
+        }
+
+        // Convert text wildcard to binary mask.
+        template <size_t N>
+        constexpr uint8_t get_wildcard_byte(const char(&s)[N], size_t idx)
+        {
+            return (s[idx * 3] == '?' ? 2 : 0) | (s[idx * 3 + 1] == '?' ? 1 : 0);
+        }
+
+        // Convert a character array to binary version and wildcard array.
+        template <size_t N, size_t... Is>
+        constexpr pattern<sizeof...(Is)> decode_string_pattern(const char(&s)[N], std::index_sequence<Is...>)
+        {
+            return {
+                { get_pattern_byte(s, Is)... },
+                { get_wildcard_byte(s, Is)... },
+            };
+        }
+    }
+
+    // Create a binary pattern from raw string litteral in format: "AB C? ?D ??".
+    template <size_t N>
+    constexpr const pattern<N / 3> mkpat(const char(&s)[N])
+    {
+        if ((N % 3) == 0)
+            return detail::decode_string_pattern(s, std::make_index_sequence<N / 3>());
+        else
+            throw std::runtime_error("Improperly formatted pattern.");
+    }
+
 #else
 #   define CPP14(x)
 #endif
@@ -104,12 +171,19 @@ namespace hooker
 
     /// Find a first occourence of memory pattern.
     /// \param start a pointer to beginning of memory range.
-    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
     /// \param pattern a array of bytes to search for.
     /// \param pattern_len a length of pattern array.
     /// \param a wildcard byte in the pattern array.
-    template<typename Type CPP14(=uint8_t*), typename Addr CPP14(=auto)>
-    Type find_pattern(Addr start, size_t size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard) { return (Type)hooker_find_pattern(reinterpret_cast<void*>(start), size, pattern, pattern_len, wildcard); }
+    template<typename Type CPP14(=uint8_t*), typename Addr, typename Pattern>
+    Type find_pattern(Addr start, int size, const Pattern* pattern, size_t pattern_len, uint8_t wildcard) { return reinterpret_cast<Type>(hooker_find_pattern(reinterpret_cast<void*>(start), size, reinterpret_cast<uint8_t*>(const_cast<Pattern*>(pattern)), pattern_len, wildcard)); }
+
+    /// Find a first occourence of memory pattern.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param patternand wildcard mask.
+    template<typename Type CPP14(=uint8_t*), typename Addr, size_t N>
+    Type find_pattern(Addr start, int size, const pattern<N>& pattern) { return reinterpret_cast<Type>(hooker_find_pattern_ex(reinterpret_cast<void*>(start), size, pattern.pattern, N, pattern.wildcard)); }
 
     /// Fill memory with nops (0x90 opcode).
     /// \param start of the memory address.
