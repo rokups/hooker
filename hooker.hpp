@@ -61,17 +61,17 @@ namespace hooker
     /// \param size of memory at address p.
     /// \param protection a combination of HOOKER_MEM_* flags.
     /// \param original_protection on supported platforms will be set to current memory protection mode. May be null. If not null - always initialize to a best-guess current protection flags value, because on some platforms (like linux) this variable will not be set.
-    template<typename Type CPP14( CPP14(=void*)), typename Addr CPP14(=auto)>
+    template<typename Type CPP14(=void*), typename Addr>
     bool mem_protect(Addr p, size_t size, size_t protection, size_t* original_protection=nullptr) { return hooker_mem_protect(reinterpret_cast<void*>(p), size, protection, original_protection) == HOOKER_SUCCESS;  }
     /// Get mnemonic size of current platform.
     template<typename Addr>
     size_t get_mnemonic_size(Addr address, size_t min_size) { return hooker_get_mnemonic_size(reinterpret_cast<void*>(address), min_size); }
 
     /// Hotpatch a call.
-    template<typename OriginalProc CPP14(=void*), typename Addr CPP14(=auto), typename ProcAddr CPP14(=auto)>
+    template<typename OriginalProc CPP14(=void*), typename Addr, typename ProcAddr>
     OriginalProc hotpatch(Addr location, ProcAddr new_proc) { return reinterpret_cast<OriginalProc>(hooker_hotpatch(reinterpret_cast<void*>(location), reinterpret_cast<void*>(new_proc))); }
     /// Unhotpatch a call.
-    template<typename Type CPP14(=void*), typename Addr CPP14(=auto)>
+    template<typename Type CPP14(=void*), typename Addr>
     bool unhotpatch(Addr location) { return hooker_unhotpatch(reinterpret_cast<void*>(location)) == HOOKER_SUCCESS; }
 
     /// Writes a jump or call hook from `address` to `new_proc`.
@@ -87,7 +87,7 @@ namespace hooker
     /// \param address a start of original call. Warning: It should not contain any relatively-addressed instructions like calls or jumps.
     /// \param new_proc a proc that will be called instead of original one.
     /// \returns pointer, calling which will invoke original proc. It is user's responsibility to call original code when necessary.
-    template<typename OriginalProc CPP14(=void*), typename Addr CPP14(=auto), typename ProcAddr CPP14(=auto)>
+    template<typename OriginalProc CPP14(=void*), typename Addr, typename ProcAddr>
     OriginalProc redirect(Addr address, ProcAddr new_proc, size_t flags=0) { return reinterpret_cast<OriginalProc>(hooker_redirect(reinterpret_cast<void*>(address), reinterpret_cast<void*>(new_proc), flags)); }
 
     /// Unhook a hook created by hooker::hook(.., .., HOOKER_HOOK_REDIRECT, ..).
