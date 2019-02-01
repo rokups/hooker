@@ -961,6 +961,7 @@ disasm_done:
 #   include <sys/mman.h>
 #   include <unistd.h>
 #   include <errno.h>
+#   include <dlfcn.h>
 #else
 typedef char unsupported_platform[-1];
 #endif
@@ -1232,7 +1233,7 @@ size_t* hooker_get_vmt_address(void* object, void* method)
     return vmt;
 }
 
-void* hooker_find_pattern(void* start, int size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
+void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
 {
     if (start == 0 || pattern == 0 || pattern_len == 0)
         return 0;
@@ -1324,26 +1325,107 @@ void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size
     return 0;
 }
 
-void hooker_nop(void* start, size_t size)
+void* hooker_nop(void* start, size_t size)
 {
     if (start == 0 || size == 0)
-        return;
+        return HOOKER_ERROR;
 
     size_t original = HOOKER_MEM_RX;
-    hooker_mem_protect(start, size, HOOKER_MEM_RWX, &original);
+    if (hooker_mem_protect(start, size, HOOKER_MEM_RWX, &original) != HOOKER_SUCCESS)
+        return HOOKER_ERROR;
     memset(start, 0x90, size);
     hooker_mem_protect(start, size, original, 0);
     hooker_flush_instruction_cache(start, size);
+    return HOOKER_SUCCESS;
 }
 
-void hooker_write(void* start, void* data, size_t size)
+void* hooker_write(void* start, void* data, size_t size)
 {
     if (start == 0 || size == 0)
-        return;
+        return HOOKER_ERROR;
 
     size_t original = HOOKER_MEM_RX;
-    hooker_mem_protect(start, size, HOOKER_MEM_RWX, &original);
-    memcpy(start, data, size);
-    hooker_mem_protect(start, size, original, 0);
-    hooker_flush_instruction_cache(start, size);
+    if (hooker_mem_protect(start, size, HOOKER_MEM_RWX, &original) == HOOKER_SUCCESS)
+    {
+        memcpy(start, data, size);
+        hooker_mem_protect(start, size, original, 0);
+        hooker_flush_instruction_cache(start, size);
+        return HOOKER_SUCCESS;
+    }
+    return HOOKER_ERROR;
 }
+
+void* hooker_dlsym(const char* lib_name, const char* sym_name)
+{
+#if _WIN32
+    HMODULE mod = GetModuleHandleA(lib_name);
+    if (mod == 0)
+    {
+        mod = LoadLibraryA(lib_name);
+        if (mod == 0)
+            return 0;
+    }
+
+    return GetProcAddress(mod, sym_name);
+#elif __linux__
+    void* mod = dlopen(lib_name, RTLD_GLOBAL | RTLD_NODELETE);
+    if (mod == 0)
+        return 0;
+    void* sym = dlsym(mod, sym_name);
+    dlclose(mod);
+    return sym;
+#endif
+}
+
+#if _WIN32
+void* hooker_hook_iat(const char* mod_name, const char* imp_mod_name, const char* imp_proc_name, void* new_proc)
+{
+    if (mod_name == 0 || imp_mod_name == 0 || imp_proc_name == 0 || new_proc == 0)
+        return HOOKER_ERROR;
+
+    void* result = 0;
+    uintptr_t module_base = (uintptr_t)GetModuleHandleA(mod_name);
+    if (module_base == 0)
+        module_base = (uintptr_t)LoadLibraryA(mod_name);
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)module_base;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)(module_base + dos->e_lfanew);
+    PIMAGE_IMPORT_DESCRIPTOR import_dir;
+
+    if (nt->Signature != IMAGE_NT_SIGNATURE)
+        return HOOKER_ERROR;
+
+    import_dir = (PIMAGE_IMPORT_DESCRIPTOR)(module_base + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+    for (unsigned i = 0; import_dir[i].Characteristics != 0; i++)
+    {
+        const char* import_name = (const char*)(module_base + import_dir[i].Name);
+        if (_strcmpi(import_name, imp_mod_name) != 0)
+            continue;
+
+        PIMAGE_THUNK_DATA thunk;
+        PIMAGE_THUNK_DATA thunk_orig;
+
+        if (!import_dir[i].FirstThunk || !import_dir[i].OriginalFirstThunk)
+            return HOOKER_ERROR;
+
+        thunk = (PIMAGE_THUNK_DATA)(module_base + import_dir[i].FirstThunk);
+        thunk_orig = (PIMAGE_THUNK_DATA)(module_base + import_dir[i].OriginalFirstThunk);
+
+        for (; thunk_orig->u1.Function != 0; thunk_orig++, thunk++)
+        {
+            if (thunk_orig->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+                // Ordinals unsupported
+                continue;
+
+            PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)(module_base + thunk_orig->u1.AddressOfData);
+            if (strcmp(imp_proc_name, (const char*)import->Name) != 0)
+                continue;
+
+            result = (PVOID)(uintptr_t)thunk->u1.Function;
+            if (hooker_write(&thunk->u1.Function, &new_proc, sizeof(new_proc)) == HOOKER_SUCCESS)
+                return result;
+        }
+    }
+
+    return HOOKER_ERROR;
+}
+#endif

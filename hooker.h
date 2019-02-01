@@ -106,7 +106,7 @@ size_t* hooker_get_vmt_address(void* object, void* method);
 /// \param pattern a array of bytes to search for.
 /// \param pattern_len a length of pattern array.
 /// \param wildcard byte in the pattern array. It must be of same size as indicated by `pattern_len`.
-void* hooker_find_pattern(void* start, int size, uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
+void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
 
 /// Find a first occourence of memory pattern.
 /// \param start a pointer to beginning of memory range.
@@ -119,13 +119,31 @@ void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size
 /// Fill memory with nops (0x90 opcode).
 /// \param start of the memory address.
 /// \param size of the memory that will be filled.
-void hooker_nop(void* start, size_t size);
+/// \returns HOOKER_SUCCESS or HOOKER_ERROR.
+void* hooker_nop(void* start, size_t size);
 
 /// Write bytes to specified memory address.
 /// \param start of the memory address.
 /// \param data to be written.
 /// \param size of data.
-void hooker_write(void* start, void* data, size_t size);
+void* hooker_write(void* start, void* data, size_t size);
+
+/// Searches for symbol in specified library. On Windows LoadLibrary() will be called if its not loaded yet, otherwise GetModuleHandle() will be used.
+/// On linux dlopen(RTLD_NODELETE) and dlclose() will always be called.
+/// \param lib_name string with dynamic library name.
+/// \param sym_name string with exported symbol name.
+/// \returns pointer to resolved dynamic symbol.
+void* hooker_dlsym(const char* lib_name, const char* sym_name);
+
+#if _WIN32
+/// Replaces entry in import address table of specified module.
+/// \param mod_name string with name of module whose import table is to be modified.
+/// \param imp_mod_name string with name of module which module specified in `mod_name` imports.
+/// \param imp_proc_name string with name of symbol imported from module specified in `imp_mod_name`.
+/// \param new_proc a pointer that should replace old entry in import address table.
+/// \returns original value that was in import address table or null pointer on failure.
+void* hooker_hook_iat(const char* mod_name, const char* imp_mod_name, const char* imp_proc_name, void* new_proc);
+#endif
 
 // Define following macro in a single translation unit in order to use library without building it.
 #ifdef HOOKER_IMPLEMENTATION

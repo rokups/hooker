@@ -25,7 +25,8 @@ cmake_minimum_required(VERSION 2.8)
 
 file(GLOB_RECURSE SOURCE_FILES *.c *.h *.hpp)
 add_library(hooker STATIC ${SOURCE_FILES})
-target_include_directories(hooker PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(hooker SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_FILES})
 
 if (HOOKER_WITH_TESTS)
     enable_testing()
