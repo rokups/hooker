@@ -32,7 +32,10 @@ namespace hooker
 {
     namespace detail
     {
-        #include "hooker.h"
+        extern "C"
+        {
+            #include "hooker.h"
+        }
     }
 #if __cplusplus >= 201402L
     /// Pattern for find_pattern() function.
@@ -46,30 +49,10 @@ namespace hooker
     };
 
 #   define CPP14(x) x
-    /// Universal call function that takes address as a first argument and any amount of arguments. Address will be called with these arguments. Return type is specified as first template argument.
-    /// \param address of function to call.
-    /// \param ... any amount of arguments with any types.
-    /// \returns value of type specified as first template argument, or none if no type is specified.
-    template<typename Result, typename Addr, typename... Args, typename std::enable_if<std::is_void<Result>::value>::type* = nullptr>
-    Result call(Addr address, Args... arguments)
-    {
-        typedef Result(*UniversalCall)(...);
-        reinterpret_cast<UniversalCall>(address)(arguments...);
-    }
-
-    /// Universal call function that takes address as a first argument and any amount of arguments. Address will be called with these arguments. Return type is specified as first template argument.
-    /// \param address of function to call.
-    /// \param ... any amount of arguments with any types.
-    /// \returns value of type specified as first template argument, or none if no type is specified.
-    template<typename Result, typename Addr, typename... Args, typename std::enable_if<!std::is_void<Result>::value>::type* = nullptr>
-    Result call(Addr address, Args... arguments)
-    {
-        typedef Result(*UniversalCall)(...);
-        return UniversalCall(address)(arguments...);
-    }
-
     namespace detail
     {
+        struct Helper { };
+
         // Convert hex character to a number.
         constexpr uint8_t char_to_byte(char c)
         {
@@ -130,10 +113,13 @@ namespace hooker
 #if __cplusplus > 201703L
     using bit_cast = std::bit_cast;
 #else
-    template<typename To, typename From> [[nodiscard]]
+    template<typename To, typename From>
+#if __cplusplus >= 201703L
+    [[nodiscard]]
+#endif
     To bit_cast(From &&from) noexcept(std::is_nothrow_constructible_v<To>)
     {
-        static_assert(std::is_trivially_copyable<typename std::remove_cv<typename std::remove_reference<From>::type>::type>::value, "From type must be trivially copiable.");
+        static_assert(std::is_trivially_copyable<typename std::remove_cv<typename std::remove_reference<From>::type>::type>::value, "From type must be trivially copable.");
         static_assert(std::is_trivially_copyable<typename std::remove_cv<typename std::remove_reference<To>::type>::type>::value, "To type must be trivially copiable.");
         static_assert(sizeof(From) == sizeof(To), "Sizes of From and To types must be the same.");
         static_assert(std::is_default_constructible<To>::value, "To type must be default constructible.");
@@ -151,6 +137,44 @@ namespace hooker
         template<typename Addr>
         typename std::enable_if<!std::is_integral<Addr>::value, void*>::type
         any_to_voidp(Addr addr) { return bit_cast<void*>(addr); }
+    }
+#if _WIN32
+    /// Calls specified address as __stdcall function passing any amount of arguments. Return type is specified as first template argument. Available only on windows.
+    /// \param address of function to call.
+    /// \param ... any amount of arguments with any types.
+    /// \returns value of type specified as first template argument, or none if no type is specified.
+    template<typename Result, typename Addr, typename... Args>
+    Result stdcall(Addr address, Args... arguments)
+    {
+        typedef Result(__stdcall*UniversalCall)(Args...);
+        return UniversalCall(address)(arguments...);
+    }
+#   define HOOKER_CDECL __cdecl
+#else
+#   define HOOKER_CDECL
+#endif
+    /// Calls specified address as __cdecl function passing any amount of arguments. Return type is specified as first template argument.
+    /// \param address of function to call.
+    /// \param ... any amount of arguments with any types.
+    /// \returns value of type specified as first template argument, or none if no type is specified.
+    template<typename Result, typename Addr, typename... Args>
+    Result ccall(Addr address, Args... arguments)
+    {
+        typedef Result(HOOKER_CDECL*UniversalCall)(Args...);
+        return reinterpret_cast<UniversalCall>(address)(arguments...);
+    }
+#undef HOOKER_CDECL
+    /// Calls specified address as __thiscall function with provided address as 'this' pointer, passing any amount of arguments. Return type is specified as first template argument.
+    /// \param address of function to call.
+    /// \param ... any amount of arguments with any types.
+    /// \returns value of type specified as first template argument, or none if no type is specified.
+    template<typename Result, typename Addr, typename This, typename... Args>
+    Result thiscall(Addr address, This thisPtr, Args... arguments)
+    {
+        detail::Helper* thisHelper = bit_cast<detail::Helper*>(thisPtr);
+        typedef Result(detail::Helper::*TUniversalCall)(Args...);
+        TUniversalCall UniversalCall = bit_cast<TUniversalCall>(address);
+        return (thisHelper->*UniversalCall)(arguments...);
     }
 
     /// Return object of specified `Type` which is located at `base + offset`.
