@@ -117,13 +117,20 @@ namespace hooker
 #if __cplusplus >= 201703L
     [[nodiscard]]
 #endif
-    To bit_cast(From &&from) noexcept(std::is_nothrow_constructible_v<To>)
+    To bit_cast(From &&from)
+#if __cplusplus >= 201402L
+        noexcept(std::is_nothrow_constructible<To>::value)
+#endif
     {
         static_assert(std::is_trivially_copyable<typename std::remove_cv<typename std::remove_reference<From>::type>::type>::value, "From type must be trivially copable.");
         static_assert(std::is_trivially_copyable<typename std::remove_cv<typename std::remove_reference<To>::type>::type>::value, "To type must be trivially copiable.");
         static_assert(sizeof(From) == sizeof(To), "Sizes of From and To types must be the same.");
         static_assert(std::is_default_constructible<To>::value, "To type must be default constructible.");
-        auto result = std::aligned_storage_t<sizeof(To), alignof(To)>{};
+#if __cplusplus >= 201402L
+        auto result = (typename std::aligned_storage_t<sizeof(To), alignof(To)>){};
+#else
+        To result{};
+#endif
         return *static_cast<To*>(memcpy(&result, &from, sizeof(To)));
     }
 #endif
