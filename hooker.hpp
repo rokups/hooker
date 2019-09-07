@@ -190,6 +190,12 @@ namespace hooker
     {
         return bit_cast<Type>(bit_cast<std::uintptr_t>(base) + offset);
     }
+    /// Return object of specified `Type` which is located at `base + offset`.
+    template<typename Type, typename Base>
+    Type from_offset(Base base, unsigned offset)
+    {
+        return *at_offset<Type*>(base, offset);
+    }
     /// Change protection of memory range.
     /// \param p memory address.
     /// \param size of memory at address p.
