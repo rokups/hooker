@@ -24,11 +24,15 @@
 
 #pragma once
 
-#define HOOKER_ERROR            (0)
-#define HOOKER_SUCCESS          ((void*)1)
-#define HOOKER_MEM_R            (1)
-#define HOOKER_MEM_W            (2)
-#define HOOKER_MEM_X            (4)
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+
+#define HOOKER_ERROR            (false)
+#define HOOKER_SUCCESS          (true)
+#define HOOKER_MEM_R            (1 << 0)
+#define HOOKER_MEM_W            (1 << 1)
+#define HOOKER_MEM_X            (1 << 2)
 #define HOOKER_MEM_RW           (HOOKER_MEM_R|HOOKER_MEM_W)
 #define HOOKER_MEM_RX           (HOOKER_MEM_R|HOOKER_MEM_X)
 #define HOOKER_MEM_RWX          (HOOKER_MEM_R|HOOKER_MEM_W|HOOKER_MEM_X)
@@ -36,19 +40,11 @@
 #define HOOKER_MEM_PLATFORM     (1 << 31)
 
 /// Write a call instruction (5 bytes on x86/64).
-#define HOOKER_HOOK_CALL        (1)
+#define HOOKER_HOOK_CALL        (1 << 0)
 /// Write a jump instruction (5 bytes on x86/64).
-#define HOOKER_HOOK_JMP         (2)
-/// Use fat jump (14 bytes on x64). Has no effect on x86.
-#define HOOKER_HOOK_FAT         (4)
-
-#if __cplusplus
-#    include <cstdint>
-#    include <cstddef>
-#else
-#    include <stdint.h>
-#    include <stddef.h>
-#endif
+#define HOOKER_HOOK_JMP         (1 << 1)
+/// Use fat jump (16 for call and 14 bytes for jmp on x64). Has no effect on x86.
+#define HOOKER_HOOK_FAT         (1 << 2)
 
 #if __cplusplus
 extern "C" {
@@ -67,14 +63,14 @@ extern "C" {
 /// \param size of memory at address p.
 /// \param protection a combination of HOOKER_MEM_* flags.
 /// \param original_protection on supported platforms will be set to current memory protection mode. May be null. If not null - always initialize to a best-guess current protection flags value, because on some platforms (like linux) this variable will not be set.
-void* hooker_mem_protect(void* p, size_t size, size_t protection, size_t* original_protection);
+bool hooker_mem_protect(void* p, size_t size, size_t protection, size_t* original_protection);
 /// Get mnemonic size of current platform.
 size_t hooker_get_mnemonic_size(void* address, size_t min_size);
 
 /// Hotpatch a call.
 void* hooker_hotpatch(void* location, void* new_proc);
 /// Unhotpatch a call.
-void* hooker_unhotpatch(void* location);
+bool hooker_unhotpatch(void* location);
 
 /// Writes a jump or call hook from `address` to `new_proc`.
 /// \param address a pointer where hook should be written
@@ -82,13 +78,24 @@ void* hooker_unhotpatch(void* location);
 /// \param flags any of HOOKER_HOOK_* flags. They may not be combined.
 /// \param nops of bytes to nop after hook instruction. Specify -1 to autocalculate.
 /// \returns null on failure or non-null on success.
-void* hooker_hook(void* address, void* new_proc, size_t flags, size_t nops);
+bool hooker_write_instruction(void* address, void* new_proc, size_t flags, size_t nops);
+
+/// Writes a 5 byte jump with E9 opcode. Difference between pointers is limited to 32bit.
+/// \param address a pointer where hook should be written
+/// \param new_proc a pointer where hook should point to.
+/// \returns null on failure or non-null on success.
+bool hooker_write_jmp(void* address, void* new_proc);
+/// Writes a 5 byte call with E8 opcode. Difference between pointers is limited to 32bit.
+/// \param address a pointer where hook should be written
+/// \param new_proc a pointer where hook should point to.
+/// \returns null on failure or non-null on success.
+bool hooker_write_call(void* address, void* new_proc);
 
 /// Redirect call to custom proc.
 /// \param address a start of original call. Warning: It should not contain any relatively-addressed instructions like calls or jumps.
 /// \param new_proc a proc that will be called instead of original one.
 /// \returns pointer, calling which will invoke original proc. It is user's responsibility to call original code when necessary.
-void* hooker_redirect(void* address, void* new_proc, size_t flags);
+void* hooker_hook(void* address, void* new_proc, size_t flags);
 
 /// Unhook a hook created by hooker_hook(.., .., HOOKER_HOOK_REDIRECT, ..).
 /// \param address where hook was written to.
@@ -100,7 +107,7 @@ void hooker_unhook(void* address, void* original);
 /// \param method is a pointer to a c++ object method.
 size_t* hooker_get_vmt_address(void* object, void* method);
 
-/// Find a first occourence of memory pattern.
+/// Find a first occurrence of memory pattern.
 /// \param start a pointer to beginning of memory range.
 /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
 /// \param pattern a array of bytes to search for.
@@ -108,7 +115,7 @@ size_t* hooker_get_vmt_address(void* object, void* method);
 /// \param wildcard byte in the pattern array. It must be of same size as indicated by `pattern_len`.
 void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
 
-/// Find a first occourence of memory pattern.
+/// Find a first occurrence of memory pattern.
 /// \param start a pointer to beginning of memory range.
 /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
 /// \param pattern a array of bytes to search for.
@@ -120,13 +127,13 @@ void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size
 /// \param start of the memory address.
 /// \param size of the memory that will be filled.
 /// \returns HOOKER_SUCCESS or HOOKER_ERROR.
-void* hooker_nop(void* start, size_t size);
+bool hooker_nop(void* start, size_t size);
 
 /// Write bytes to specified memory address.
 /// \param start of the memory address.
 /// \param data to be written.
 /// \param size of data.
-void* hooker_write(void* start, void* data, size_t size);
+bool hooker_write(void* start, void* data, size_t size);
 
 /// Searches for symbol in specified library. On Windows LoadLibrary() will be called if its not loaded yet, otherwise GetModuleHandle() will be used.
 /// On linux dlopen(RTLD_NODELETE) and dlclose() will always be called.

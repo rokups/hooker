@@ -36,6 +36,7 @@ namespace hooker
         {
             #include "hooker.h"
         }
+        struct Helper { };
     }
 #if __cplusplus >= 201402L
     /// Pattern for find_pattern() function.
@@ -51,8 +52,6 @@ namespace hooker
 #   define CPP14(x) x
     namespace detail
     {
-        struct Helper { };
-
         // Convert hex character to a number.
         constexpr uint8_t char_to_byte(char c)
         {
@@ -221,14 +220,27 @@ namespace hooker
     /// \param nops of bytes to nop after hook instruction. Specify -1 to autocalculate.
     /// \returns null on failure or non-null on success.
     template<typename Addr, typename ProcAddr>
-    bool hook(Addr address, ProcAddr new_proc, size_t flags, size_t nops=-1) { return detail::hooker_hook(detail::any_to_voidp(address), detail::any_to_voidp(new_proc), flags, nops) == HOOKER_SUCCESS; }
+    bool write_instruction(Addr address, ProcAddr new_proc, size_t flags, size_t nops=-1) { return detail::hooker_write_instruction(detail::any_to_voidp(address), detail::any_to_voidp(new_proc), flags, nops) == HOOKER_SUCCESS; }
+
+    /// Writes a 5 byte jump with E9 opcode. Difference between pointers is limited to 32bit.
+    /// \param address a pointer where hook should be written
+    /// \param new_proc a pointer where hook should point to.
+    /// \returns null on failure or non-null on success.
+    template<typename Addr, typename ProcAddr>
+    bool write_jmp(Addr address, ProcAddr new_proc) { return detail::hooker_write_jmp(detail::any_to_voidp(address), detail::any_to_voidp(new_proc)) == HOOKER_SUCCESS; }
+    /// Writes a 5 byte call with E8 opcode. Difference between pointers is limited to 32bit.
+    /// \param address a pointer where hook should be written
+    /// \param new_proc a pointer where hook should point to.
+    /// \returns null on failure or non-null on success.
+    template<typename Addr, typename ProcAddr>
+    bool write_call(Addr address, ProcAddr new_proc) { return detail::hooker_write_call(detail::any_to_voidp(address), detail::any_to_voidp(new_proc)) == HOOKER_SUCCESS; }
 
     /// Redirect call to custom proc.
     /// \param address a start of original call. Warning: It should not contain any relatively-addressed instructions like calls or jumps.
     /// \param new_proc a proc that will be called instead of original one.
     /// \returns pointer, calling which will invoke original proc. It is user's responsibility to call original code when necessary.
     template<typename OriginalProc CPP14(=void*), typename Addr, typename ProcAddr>
-    OriginalProc redirect(Addr address, ProcAddr new_proc, size_t flags=0) { return bit_cast<OriginalProc>(detail::hooker_redirect(detail::any_to_voidp(address), detail::any_to_voidp(new_proc), flags)); }
+    OriginalProc hook(Addr address, ProcAddr new_proc, size_t flags=0) { return bit_cast<OriginalProc>(detail::hooker_hook(detail::any_to_voidp(address), detail::any_to_voidp(new_proc), flags)); }
 
     /// Unhook a hook created by hooker::hook(.., .., HOOKER_HOOK_REDIRECT, ..).
     /// \param address where hook was written to.
@@ -242,7 +254,7 @@ namespace hooker
     template<typename Proc, typename Addr, typename ProcAddr>
     Proc& get_vmt_address(Addr object, ProcAddr method) { return *bit_cast<Proc*>(detail::hooker_get_vmt_address(reinterpret_cast<void*>(object), detail::any_to_voidp(method))); }
 
-    /// Find a first occourence of memory pattern.
+    /// Find a first occurrence of memory pattern.
     /// \param start a pointer to beginning of memory range.
     /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
     /// \param pattern a array of bytes to search for.
@@ -252,7 +264,7 @@ namespace hooker
     Type find_pattern(Addr start, int size, const Pattern* pattern, size_t pattern_len, uint8_t wildcard) { return bit_cast<Type>(detail::hooker_find_pattern(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), pattern_len, wildcard)); }
 
 #if __cplusplus >= 201402L
-    /// Find a first occourence of memory pattern.
+    /// Find a first occurrence of memory pattern.
     /// \param start a pointer to beginning of memory range.
     /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
     /// \param pattern and wildcard mask.
@@ -260,7 +272,7 @@ namespace hooker
     Type find_pattern(Addr start, int size, const pattern<N>& pattern) { return bit_cast<Type>(detail::hooker_find_pattern_ex(detail::any_to_voidp(start), size, pattern.pattern, N, pattern.wildcard)); }
 #endif
 
-    /// Find a first occourence of string pattern.
+    /// Find a first occurrence of string pattern.
     /// \param start a pointer to beginning of memory range.
     /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
     /// \param pattern a string to search.
@@ -270,10 +282,10 @@ namespace hooker
 
     /// Fill memory with nops (0x90 opcode).
     /// \param start of the memory address.
-    /// \param size of the memory that will be filled.
+    /// \param size of the memory that will be filled. Nops a single instruction when not specified.
     /// \returns true on success or false on failure.
     template<typename Addr>
-    bool nop(Addr start, size_t size) { return detail::hooker_nop(detail::any_to_voidp(start), size) == HOOKER_SUCCESS; }
+    bool nop(Addr start, size_t size=-1) { return detail::hooker_nop(detail::any_to_voidp(start), size) == HOOKER_SUCCESS; }
 
     /// Write a value to specified memory address.
     /// \param start of the memory address.

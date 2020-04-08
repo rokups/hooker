@@ -27,6 +27,26 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include <assert.h>
+#if _WIN32
+#   undef NOMINMAX
+#   include <windows.h>
+#   define MIN min
+#   define MAX max
+#elif __linux__
+#   include <sys/param.h>
+#   include <sys/mman.h>
+#   include <unistd.h>
+#   include <errno.h>
+#   include <dlfcn.h>
+#else
+typedef char unsupported_platform[-1];
+#endif
+#if __amd64__ || _M_X64
+#   define HOOKER_X64 1
+#endif
+
 #include "hooker.h"
 #include <string.h>
 
@@ -950,25 +970,6 @@ disasm_done:
 
 /****************************************** End of Hacker Disassembler code *******************************************/
 
-#include <assert.h>
-#if _WIN32
-#   undef NOMINMAX
-#   include <windows.h>
-#   define MIN min
-#   define MAX max
-#elif __linux__
-#   include <sys/param.h>
-#   include <sys/mman.h>
-#   include <unistd.h>
-#   include <errno.h>
-#   include <dlfcn.h>
-#else
-typedef char unsupported_platform[-1];
-#endif
-#if __amd64__ || _M_X64
-#   define HOOKER_X64 1
-#endif
-
 void* hooker_alloc(size_t size)
 {
 #if _WIN32
@@ -1013,7 +1014,7 @@ void hooker_flush_instruction_cache(void* address, size_t size)
 #endif
 }
 
-void* hooker_mem_protect(void* p, size_t size, size_t protection, size_t* original_protection)
+bool hooker_mem_protect(void* p, size_t size, size_t protection, size_t* original_protection)
 {
 #if _WIN32
     DWORD old = 0;
@@ -1084,7 +1085,7 @@ void* hooker_hotpatch(void* location, void* new_proc)
 {
     if (*(uint16_t*)location != 0xFF8B)                                          // Verify if location is hot-patchable.
         return (void*)HOOKER_ERROR;
-    hooker_hook((uint8_t*)location - 5, new_proc, HOOKER_HOOK_JMP, 0);
+    hooker_write_instruction((uint8_t*)location - 5, new_proc, HOOKER_HOOK_JMP, 0);
     size_t original_protection = HOOKER_MEM_RX;
     hooker_mem_protect(location, 2, HOOKER_MEM_RWX, &original_protection);
     *(uint16_t*)location = 0xF9EB;                                              // jump back to hotpatch
@@ -1093,7 +1094,7 @@ void* hooker_hotpatch(void* location, void* new_proc)
     return (uint8_t*)location + 2;
 }
 
-void* hooker_unhotpatch(void* location)
+bool hooker_unhotpatch(void* location)
 {
     if (*(uint16_t*)location != 0xF9EB)                                         // Verify that location was hotpatched.
         return (size_t)HOOKER_ERROR;
@@ -1109,34 +1110,52 @@ void hooker_nop_tail(void* address, size_t len, size_t nops)
 {
     if (nops == -1)
         nops = hooker_get_mnemonic_size(address, len) - len;
-    hooker_nop((uint8_t*)address + len, nops);
+    if (nops > 0)
+        hooker_nop((uint8_t*)address + len, nops);
 }
 
-void* hooker_hook(void* address_, void* new_proc, size_t flags, size_t nops)
+size_t hooker_instruction_length(size_t flags)
 {
-    uint8_t* address = (uint8_t*)address_;
 #if HOOKER_X64
     if (flags & HOOKER_HOOK_FAT)
     {
-        uint16_t opcode = 0;
         if (flags & HOOKER_HOOK_CALL)
-            opcode = 0xD0FF;
-        else if (flags & HOOKER_HOOK_JMP)
-            opcode = 0xE0FF;
+            return 16;
         else
-            return HOOKER_ERROR;
+            return 14;
+    }
+#endif
+    return 5;
+}
 
-        hooker_nop_tail(address, 12, nops);
+bool hooker_write_instruction(void* address_, void* new_proc, size_t flags, size_t nops)
+{
+    bool result = HOOKER_SUCCESS;
+    uint8_t* address = (uint8_t*)address_;
+    size_t instr_len = hooker_instruction_length(flags);
+    size_t original_protection = HOOKER_MEM_RX;
+    hooker_nop_tail(address, instr_len, nops);
+    hooker_mem_protect(address, instr_len, HOOKER_MEM_RWX, &original_protection);
 
+#if HOOKER_X64
+    if (flags & HOOKER_HOOK_FAT)
+    {
         // Fat call/jump to 64 bit address
-        size_t original_protection = HOOKER_MEM_RX;
-        hooker_mem_protect(address, 12, HOOKER_MEM_RWX, &original_protection);
-        *(uint16_t*)&address[0] = 0xB848;                    // movabs rax,
-        *(uint64_t*)&address[2] = (uint64_t)new_proc;        // address
-        *(uint16_t*)&address[10] = opcode;                   // callq|jmpq rax
-        hooker_mem_protect(address, 12, original_protection, 0);
-        hooker_flush_instruction_cache(address, 12);
-        return HOOKER_SUCCESS;
+        if (flags & HOOKER_HOOK_CALL)
+        {
+            *(uint16_t*)&address[0] = 0x15FF;                    // call qword ptr [rip+0]
+            *(uint32_t*)&address[2] = 0;
+            *(uint16_t*)&address[6] = 0x08EB;                    // jmp +8
+            *(uint64_t*)&address[8] = (uint64_t)new_proc;        // address
+        }
+        else if (flags & HOOKER_HOOK_JMP)
+        {
+            *(uint16_t*)&address[0] = 0x25FF;                    // jmp qword ptr [rip+0]
+            *(uint32_t*)&address[2] = 0;
+            *(uint64_t*)&address[6] = (uint64_t)new_proc;        // address
+        }
+        else
+            result = HOOKER_ERROR;
     }
     else
 #endif
@@ -1152,33 +1171,42 @@ void* hooker_hook(void* address_, void* new_proc, size_t flags, size_t nops)
 #if HOOKER_X64
             // On x64 addresses may be further away than fits into 32bits. HOOKER_HOOK_FAT should be used in these cases.
             if ((size_t)(MAX(address, (uint8_t*)new_proc) - MIN(address, (uint8_t*)new_proc)) > 0x80000000)
-                return (void*)HOOKER_ERROR;
+                result = HOOKER_ERROR;
+            else
 #endif
-            hooker_nop_tail(address, 5, nops);
-
-            size_t original_protection = HOOKER_MEM_RX;
-            hooker_mem_protect(address, 5, HOOKER_MEM_RWX, &original_protection);
-            uint8_t* location_t = address;
-            *location_t = opcode;
-            *(uint32_t*)(++location_t) = (uint32_t)((size_t)new_proc - (size_t)address) - 5;
-            hooker_mem_protect(address, 5, original_protection, 0);
-            hooker_flush_instruction_cache(address, 5);
-            return HOOKER_SUCCESS;
+            {
+                uint8_t* location_t = address;
+                *location_t = opcode;
+                *(uint32_t*)(++location_t) = (uint32_t)((size_t)new_proc - (size_t)address) - 5;
+            }
         }
+        else
+            result = HOOKER_ERROR;
     }
 
-    return HOOKER_ERROR;
+    hooker_mem_protect(address, instr_len, original_protection, 0);
+    hooker_flush_instruction_cache(address, instr_len);
+
+    return result;
 }
 
-void* hooker_redirect(void* address_, void* new_proc, size_t flags)
+bool hooker_write_jmp(void* address, void* new_proc)
+{
+    return hooker_write_instruction(address, new_proc, HOOKER_HOOK_JMP, -1);
+}
+
+bool hooker_write_call(void* address, void* new_proc)
+{
+    return hooker_write_instruction(address, new_proc, HOOKER_HOOK_CALL, -1);
+}
+
+void* hooker_hook(void* address_, void* new_proc, size_t flags)
 {
     uint8_t* address = (uint8_t*)address_;
 #if HOOKER_X64
-    size_t jmp_len = 12;
     flags |= HOOKER_HOOK_FAT;
-#else
-    size_t jmp_len = 5;
 #endif
+    size_t jmp_len = hooker_instruction_length((flags & ~HOOKER_HOOK_CALL) | HOOKER_HOOK_JMP);
     size_t save_bytes = hooker_get_mnemonic_size(address, jmp_len);
     size_t bridge_size = save_bytes + jmp_len + 1;
     if (flags & HOOKER_HOOK_CALL)
@@ -1193,19 +1221,19 @@ void* hooker_redirect(void* address_, void* new_proc, size_t flags)
     // Write a call to our hook.
     if (flags & HOOKER_HOOK_CALL)
     {
-        hooker_hook(bridge, new_proc, flags, 0);
-        bridge += jmp_len;
+        hooker_write_instruction(bridge, new_proc, flags, 0);
+        bridge += hooker_instruction_length((flags & ~HOOKER_HOOK_JMP) | HOOKER_HOOK_CALL);
     }
     // Write overwritten instructions
     memcpy(bridge, address, save_bytes);
     bridge += save_bytes;
     // Write jump to original function
-    hooker_hook(bridge, address + save_bytes, HOOKER_HOOK_JMP | HOOKER_HOOK_FAT, 0);
+    hooker_write_instruction(bridge, address + save_bytes, HOOKER_HOOK_JMP | HOOKER_HOOK_FAT, 0);
     // Write jump to the new proc
     if (flags & HOOKER_HOOK_CALL)
-        hooker_hook(address, bridge_start, HOOKER_HOOK_JMP | HOOKER_HOOK_FAT, -1);
+        hooker_write_instruction(address, bridge_start, HOOKER_HOOK_JMP | HOOKER_HOOK_FAT, -1);
     else
-        hooker_hook(address, new_proc, HOOKER_HOOK_JMP | HOOKER_HOOK_FAT, -1);
+        hooker_write_instruction(address, new_proc, HOOKER_HOOK_JMP | HOOKER_HOOK_FAT, -1);
     // Bridge is call to original proc
     return bridge_start;
 }
@@ -1325,10 +1353,13 @@ void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size
     return 0;
 }
 
-void* hooker_nop(void* start, size_t size)
+bool hooker_nop(void* start, size_t size)
 {
-    if (start == 0 || size == 0)
+    if (start == 0)
         return HOOKER_ERROR;
+
+    if (size == -1)
+        size = hooker_get_mnemonic_size(start, 1);
 
     size_t original = HOOKER_MEM_RX;
     if (hooker_mem_protect(start, size, HOOKER_MEM_RWX, &original) != HOOKER_SUCCESS)
@@ -1339,7 +1370,7 @@ void* hooker_nop(void* start, size_t size)
     return HOOKER_SUCCESS;
 }
 
-void* hooker_write(void* start, void* data, size_t size)
+bool hooker_write(void* start, void* data, size_t size)
 {
     if (start == 0 || size == 0)
         return HOOKER_ERROR;
