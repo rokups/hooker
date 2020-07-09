@@ -138,7 +138,7 @@ namespace hooker
     {
         template<typename Addr>
         typename std::enable_if<std::is_integral<Addr>::value, void*>::type
-        any_to_voidp(Addr addr) { return reinterpret_cast<void*>(addr); }
+        any_to_voidp(Addr addr) { return reinterpret_cast<void*>(static_cast<uintptr_t>(addr)); }
 
         template<typename Addr>
         typename std::enable_if<!std::is_integral<Addr>::value, void*>::type
