@@ -280,6 +280,62 @@ namespace hooker
     template<typename Type CPP14(=char*), typename Addr>
     Type find_pattern(Addr start, int size, const char* pattern, char wildcard='?') { return bit_cast<Type>(detail::hooker_find_pattern(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), strlen(pattern), static_cast<uint8_t>(wildcard))); }
 
+    /// Find a first occurrence of string pattern.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param pattern a string to search.
+    /// \param pattern_len a length of pattern string.
+    /// \param wildcard a wildcard character.
+    template<typename Type CPP14(=char*), typename Addr>
+    Type find_pattern(Addr start, int size, const char* pattern, int pattern_len, char wildcard='?') { return bit_cast<Type>(detail::hooker_find_pattern(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), pattern_len, static_cast<uint8_t>(wildcard))); }
+
+    /// Find a first occurrence of specified data.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param pattern to search.
+    /// \param pattern_len is a length of pattern.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find(Addr start, int size, const void* pattern, int pattern_len) { return bit_cast<Type>(detail::hooker_find(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), pattern_len)); }
+
+    /// Find a first occurrence of specified data.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param pattern to search.
+    /// \param pattern_len is a length of pattern.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find(Addr start, int size, const char* pattern, int pattern_len) { return bit_cast<Type>(detail::hooker_find(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), pattern_len)); }
+
+    /// Find a first occurrence of specified data.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param pattern to search.
+    /// \param pattern_len is a length of pattern in chars.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find(Addr start, int size, const wchar_t* pattern, int pattern_len) { return bit_cast<Type>(detail::hooker_find(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), pattern_len * 2)); }
+
+    /// Find a first occurrence of specified data.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param pattern to search. It should be a null-terminated string. Null byte is not included in search.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find(Addr start, int size, const char* pattern) { return bit_cast<Type>(detail::hooker_find(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), strlen(pattern) + 1)); }
+    
+    /// Find a first occurrence of specified data.
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param pattern to search. It should be a null-terminated string. Null byte is not included in search.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find(Addr start, int size, const wchar_t* pattern) { return bit_cast<Type>(detail::hooker_find(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), wcslen(pattern) * 2 + 2)); }
+
+    /// Find instruction "lea REG, DATA"
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param data pointer that is loaded by lea instruction.
+    /// \param data_len length of data.
+    /// \returns a pointer to lea instruction or 0.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find_lea_data_64(Addr start, int size, const void* data, int data_len) { return bit_cast<Type>(detail::hooker_find_lea_data_64(detail::any_to_voidp(start), size, data, data_len)); }
+
     /// Find instruction "lea REG, DATA"
     /// \param start a pointer to beginning of memory range.
     /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
@@ -324,6 +380,22 @@ namespace hooker
     /// \returns true on success or false on failure.
     template<typename Addr>
     bool write(Addr address, const void* data, size_t size) { return detail::hooker_write(detail::any_to_voidp(address), data, size) == HOOKER_SUCCESS; }
+
+    /// Write a string to a specified memory address.
+    /// \param start of the memory address.
+    /// \param data to be written.
+    /// \param size of data.
+    /// \returns true on success or false on failure.
+    template<typename Addr>
+    bool write(Addr address, const char* data) { return detail::hooker_write(detail::any_to_voidp(address), detail::any_to_voidp(data), strlen(data) + 1) == HOOKER_SUCCESS; }
+
+    /// Write a string to a specified memory address.
+    /// \param start of the memory address.
+    /// \param data to be written.
+    /// \param size of data.
+    /// \returns true on success or false on failure.
+    template<typename Addr>
+    bool write(Addr address, const wchar_t* data) { return detail::hooker_write(detail::any_to_voidp(address), detail::any_to_voidp(data), wcslen(data) * 2 + 2) == HOOKER_SUCCESS; }
 
     /// Searches for symbol in specified library. On Windows LoadLibrary() will be called if its not loaded yet, otherwise GetModuleHandle() will be used.
     /// On linux dlopen(RTLD_NODELETE) and dlclose() will always be called.

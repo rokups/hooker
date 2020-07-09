@@ -1261,22 +1261,49 @@ size_t* hooker_get_vmt_address(void* object, void* method)
     return vmt;
 }
 
-void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
+static bool hooker_get_start_and_end(const void* base, int size, int search_len, const uint8_t** start, const uint8_t** end, int* step)
 {
-    if (start == 0 || pattern == 0 || pattern_len == 0)
-        return 0;
+#if _WIN32
+    const void* module_base = (base == 0 || size == 0) ? (const void*)GetModuleHandleA(0) : 0;
+    if (base == 0)
+        base = module_base;
 
-    uint8_t* p = (uint8_t*)start;
-    uint8_t* end = (uint8_t*)~0;
-    int step = 1;
+    if (size == 0)
+    {
+        PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)module_base;
+        PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((uint8_t*)module_base + dos->e_lfanew);
+
+        if (module_base <= base && base <= (const uint8_t*)module_base + nt->OptionalHeader.SizeOfImage)
+            size = nt->OptionalHeader.SizeOfImage;
+    }
+#else
+    if (base == 0 || size == 0)
+        return false;
+#endif
+
+    *start = (const uint8_t*)base;
+    *end = (const uint8_t*)~(uintptr_t)0;
+    *step = 1;
     if (size > 0)
-        end = &p[size - pattern_len];
+        *end = &(*start)[size - search_len];
     else if (size < 0)
     {
-        step = -1;
-        p -= pattern_len;
-        end = &p[size];
+        *step = -1;
+        (*start) -= search_len;
+        *end = &(*start)[size];
     }
+    return true;
+}
+
+const void* hooker_find_pattern(const void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard)
+{
+    if (pattern == 0 || pattern_len == 0)
+        return 0;
+
+    uint8_t* p, *end;
+    int step;
+    if (!hooker_get_start_and_end(start, size, pattern_len, &p, &end, &step))
+        return 0;
 
     while (step > 0 ? p < end : p >= end)
     {
@@ -1295,22 +1322,15 @@ void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t 
     return 0;
 }
 
-void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size_t pattern_len, const uint8_t* wildcard)
+const void* hooker_find_pattern_ex(const void* start, int size, const uint8_t* pattern, size_t pattern_len, const uint8_t* wildcard)
 {
-    if (start == 0 || pattern == 0 || pattern_len == 0)
+    if (pattern == 0 || pattern_len == 0)
         return 0;
 
-    uint8_t* p = (uint8_t*)start;
-    uint8_t* end = (uint8_t*)~0;
-    int step = 1;
-    if (size > 0)
-        end = &p[size - pattern_len];
-    else if (size < 0)
-    {
-        step = -1;
-        p -= pattern_len;
-        end = &p[size];
-    }
+    uint8_t* p, * end;
+    int step;
+    if (!hooker_get_start_and_end(start, size, pattern_len, &p, &end, &step))
+        return 0;
 
     while (step > 0 ? p < end : p >= end)
     {
@@ -1342,6 +1362,33 @@ void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size
             }
 
             if (byte != value)
+            {
+                p += step;
+                goto pattern_search;
+            }
+        }
+        return p;
+    }
+
+    return 0;
+}
+
+const void* hooker_find(const void* start, int size, const uint8_t* pattern, int pattern_len)
+{
+    if (pattern == 0 || pattern_len == 0)
+        return 0;
+
+    uint8_t* p, * end;
+    int step;
+    if (!hooker_get_start_and_end(start, size, pattern_len, &p, &end, &step))
+        return 0;
+
+    while (step > 0 ? p < end : p >= end)
+    {
+    pattern_search:
+        for (size_t i = 0; i < pattern_len; i++)
+        {
+            if (p[i] != pattern[i])
             {
                 p += step;
                 goto pattern_search;

@@ -113,7 +113,7 @@ size_t* hooker_get_vmt_address(void* object, void* method);
 /// \param pattern a array of bytes to search for.
 /// \param pattern_len a length of pattern array.
 /// \param wildcard byte in the pattern array. It must be of same size as indicated by `pattern_len`.
-void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
+const void* hooker_find_pattern(const void* start, int size, const uint8_t* pattern, size_t pattern_len, uint8_t wildcard);
 
 /// Find a first occurrence of memory pattern.
 /// \param start a pointer to beginning of memory range.
@@ -121,7 +121,13 @@ void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t 
 /// \param pattern a array of bytes to search for.
 /// \param pattern_len a length of pattern array.
 /// \param wildcard array where values may be one of: 0? = 1, ?0 = 2, ?? = 3.
-void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size_t pattern_len, const uint8_t* wildcard);
+const void* hooker_find_pattern_ex(const void* start, int size, const uint8_t* pattern, size_t pattern_len, const uint8_t* wildcard);
+
+/// Find a first occurrence of specified data.
+/// \param start a pointer to beginning of memory range.
+/// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+/// \param data to search.
+const void* hooker_find(const void* start, int size, const uint8_t* pattern, int pattern_len);
 
 /// Find instruction "lea REG, DATA"
 /// \param start a pointer to beginning of memory range.
