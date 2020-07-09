@@ -1411,13 +1411,17 @@ void* hooker_dlsym(const char* lib_name, const char* sym_name)
 #if _WIN32
 void* hooker_hook_iat(const char* mod_name, const char* imp_mod_name, const char* imp_proc_name, void* new_proc)
 {
-    if (mod_name == 0 || imp_mod_name == 0 || imp_proc_name == 0 || new_proc == 0)
+    if (imp_mod_name == 0 || imp_proc_name == 0)
         return HOOKER_ERROR;
 
     void* result = 0;
     uintptr_t module_base = (uintptr_t)GetModuleHandleA(mod_name);
     if (module_base == 0)
+    {
+        if (mod_name == 0)
+            return HOOKER_ERROR;
         module_base = (uintptr_t)LoadLibraryA(mod_name);
+    }
     PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)module_base;
     PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)(module_base + dos->e_lfanew);
     PIMAGE_IMPORT_DESCRIPTOR import_dir;
