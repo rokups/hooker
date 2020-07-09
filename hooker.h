@@ -123,6 +123,14 @@ void* hooker_find_pattern(void* start, int size, const uint8_t* pattern, size_t 
 /// \param wildcard array where values may be one of: 0? = 1, ?0 = 2, ?? = 3.
 void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size_t pattern_len, const uint8_t* wildcard);
 
+/// Find instruction "lea REG, DATA"
+/// \param start a pointer to beginning of memory range.
+/// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+/// \param data pointer that is loaded by lea instruction.
+/// \param data_len length of data.
+/// \returns a pointer to lea instruction or 0.
+const void* hooker_find_lea_data_64(const void* start, int size, const void* data, int data_len);
+
 /// Fill memory with nops (0x90 opcode).
 /// \param start of the memory address.
 /// \param size of the memory that will be filled.

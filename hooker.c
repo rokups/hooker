@@ -1353,6 +1353,20 @@ void* hooker_find_pattern_ex(void* start, int size, const uint8_t* pattern, size
     return 0;
 }
 
+const void* hooker_find_lea_data_64(const void* start, int size, const void* data, int data_len)
+{
+    uintptr_t str_mem = (uintptr_t)hooker_find(start, size, (const uint8_t*)data, data_len);
+    const uint8_t* p = NULL;
+
+    while (p = (const uint8_t*)hooker_find(p, 0, "\x48\x8D", 2))
+    {
+        if (p && (str_mem - ((uintptr_t)p + 7)) == *(uint32_t*)(p + 3))
+            return p;
+        p += 2;
+    }
+    return 0;
+}
+
 bool hooker_nop(void* start, size_t size)
 {
     if (start == 0)

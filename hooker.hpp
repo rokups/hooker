@@ -280,6 +280,22 @@ namespace hooker
     template<typename Type CPP14(=char*), typename Addr>
     Type find_pattern(Addr start, int size, const char* pattern, char wildcard='?') { return bit_cast<Type>(detail::hooker_find_pattern(detail::any_to_voidp(start), size, reinterpret_cast<const uint8_t*>(pattern), strlen(pattern), static_cast<uint8_t>(wildcard))); }
 
+    /// Find instruction "lea REG, DATA"
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param str a string pointer including null terminator.
+    /// \returns a pointer to lea instruction or 0.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find_lea_data_64(Addr start, int size, const char* str) { return bit_cast<Type>(detail::hooker_find_lea_data_64(detail::any_to_voidp(start), size, str, strlen(str) + 1)); }
+
+    /// Find instruction "lea REG, DATA"
+    /// \param start a pointer to beginning of memory range.
+    /// \param size a size of memory range. If size is 0 then entire memory space will be searched. If pattern does not exist this will likely result in a crash. Negative size will search backwards.
+    /// \param wstr a wide string pointer including null terminator.
+    /// \returns a pointer to lea instruction or 0.
+    template<typename Type CPP14(= char*), typename Addr>
+    Type find_lea_data_64(Addr start, int size, const wchar_t* wstr) { return bit_cast<Type>(detail::hooker_find_lea_data_64(detail::any_to_voidp(start), size, wstr, wcslen(wstr) * 2 + 2)); }
+
     /// Fill memory with nops (0x90 opcode).
     /// \param start of the memory address.
     /// \param size of the memory that will be filled. Nops a single instruction when not specified.
