@@ -1203,26 +1203,26 @@ bool hooker_write_call(void* address, void* new_proc)
 void* hooker_hook(void* address_, void* new_proc, size_t flags)
 {
     uint8_t* address = (uint8_t*)address_;
-#if HOOKER_X64
-    flags |= HOOKER_HOOK_FAT;
-#endif
-    size_t jmp_len = hooker_instruction_length((flags & ~HOOKER_HOOK_CALL) | HOOKER_HOOK_JMP);
+    size_t jmp_len = hooker_instruction_length(HOOKER_HOOK_JMP | HOOKER_HOOK_FAT);
+    size_t call_len = hooker_instruction_length(HOOKER_HOOK_CALL | HOOKER_HOOK_FAT);
     size_t save_bytes = hooker_get_mnemonic_size(address, jmp_len);
-    size_t bridge_size = save_bytes + jmp_len + 1;
-    if (flags & HOOKER_HOOK_CALL)
-        bridge_size += jmp_len;
 
-    // JUMP Bridge: [len(original bytes)]             [original bytes] [jmp address+len(original bytes)]
     // CALL Bridge: [len(original bytes)] [call hook] [original bytes] [jmp address+len(original bytes)]
+    // JUMP Bridge: [len(original bytes)]             [original bytes] [jmp address+len(original bytes)]
+    size_t bridge_size = 1 + save_bytes + jmp_len;
+    if (flags & HOOKER_HOOK_CALL)
+        bridge_size += call_len;
+
     uint8_t* bridge = (uint8_t*)hooker_alloc(bridge_size);
+    memset(bridge, 0x90, bridge_size);
     // Save number of saved bytes at the start of bridge and skip a byte.
     *bridge = (uint8_t)save_bytes; bridge++;
     uint8_t* bridge_start = bridge;
     // Write a call to our hook.
     if (flags & HOOKER_HOOK_CALL)
     {
-        hooker_write_instruction(bridge, new_proc, flags, 0);
-        bridge += hooker_instruction_length((flags & ~HOOKER_HOOK_JMP) | HOOKER_HOOK_CALL);
+        hooker_write_instruction(bridge, new_proc, HOOKER_HOOK_CALL | HOOKER_HOOK_FAT, 0);
+        bridge += call_len;
     }
     // Write overwritten instructions
     memcpy(bridge, address, save_bytes);
